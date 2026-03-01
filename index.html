@@ -2,203 +2,176 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Blade Soul: Endless Green</title>
+    <title>Blade Soul: Visible</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
-        body { margin: 0; background: #111; color: #fff; font-family: 'Courier New', monospace; overflow: hidden; user-select: none; }
-        #gui { position: absolute; top: 10px; left: 10px; pointer-events: none; text-shadow: 2px 2px #000; z-index: 100; }
-        .stat { margin-bottom: 5px; font-weight: bold; }
-        #shop { position: absolute; right: 10px; top: 10px; background: rgba(0,0,0,0.9); padding: 15px; border: 2px solid #fff; border-radius: 8px; pointer-events: auto; z-index: 100; text-align: center; width: 250px; }
-        .u-btn { display: block; width: 100%; padding: 12px; margin: 10px 0; background: #fff; color: #000; border: none; font-weight: bold; cursor: pointer; border-radius: 5px; }
-        .u-btn:hover { background: #3498db; color: #fff; }
-        #over-screen { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: none; text-align: center; }
+        body { margin: 0; background: #000; overflow: hidden; font-family: 'Arial', sans-serif; }
+        #ui { position: absolute; top: 20px; left: 20px; color: white; pointer-events: none; z-index: 10; }
+        #shop { position: absolute; top: 20px; right: 20px; background: rgba(0,0,0,0.8); padding: 15px; border: 2px solid white; color: white; z-index: 10; }
+        .btn { display: block; width: 100%; margin: 5px 0; padding: 10px; cursor: pointer; background: #444; color: white; border: 1px solid white; }
+        .btn:hover { background: #666; }
     </style>
 </head>
 <body>
 
-<div id="gui">
-    <div class="stat" style="color: #ff4444;">HP: <span id="hp">100</span></div>
-    <div class="stat" style="color: #44aaff;">LEVEL: <span id="lvl">1</span></div>
-    <div class="stat" style="color: #ffff44;">IRON: <span id="iron">0</span></div>
-    <div class="stat" style="font-size: 10px;">DMG: <span id="dmg">10</span> | SPD: <span id="spd">1.0</span></div>
+<div id="ui">
+    <h2 id="lvl-txt">STAGE 1</h2>
+    <div>HP: <span id="hp-txt">100</span></div>
+    <div>IRON: <span id="iron-txt">0</span></div>
+    <div style="font-size: 12px; margin-top:10px;">WASD to Move | SPACE to Attack</div>
 </div>
 
 <div id="shop">
-    <h3 style="margin-top: 0;">FORGE</h3>
-    <button class="u-btn" onclick="buy('dmg')">SHARPEN (10 Iron)</button>
-    <button class="u-btn" onclick="buy('hp')">PLATE (15 Iron)</button>
-    <button class="u-btn" onclick="buy('spd')">LITE (20 Iron)</button>
-</div>
-
-<div id="over-screen">
-    <h1 style="color:red">DEFEATED</h1>
-    <button class="u-btn" onclick="location.reload()">TRY AGAIN</button>
+    <b>UPGRADES</b>
+    <button class="btn" onclick="buy('dmg')">DMG +5 (10 Iron)</button>
+    <button class="btn" onclick="buy('hp')">HEAL & MAX HP (15 Iron)</button>
 </div>
 
 <script>
-let scene, camera, renderer, pObj, worldSize = 300, isPaused = false;
-let enemies = [], stats = { hp: 100, maxHp: 100, lvl: 1, xp: 0, nextXp: 100, iron: 0, dmg: 10, spd: 0.15, reach: 5 };
+// --- CORE SETUP ---
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87CEEB); // Sky Blue
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// --- LIGHTING ---
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+scene.add(ambientLight);
+const pointLight = new THREE.PointLight(0xffffff, 1);
+scene.add(pointLight); // This acts as a "player torch"
+
+// --- THE GRASS ---
+const floorGeo = new THREE.PlaneGeometry(1000, 1000);
+const floorMat = new THREE.MeshStandardMaterial({ color: 0x2d5a27 }); // Dark Grass Green
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+
+// --- THE PLAYER ---
+const playerGeo = new THREE.SphereGeometry(0.7, 32, 32);
+const playerMat = new THREE.MeshStandardMaterial({ color: 0x00aaff });
+const player = new THREE.Mesh(playerGeo, playerMat);
+player.position.y = 0.7;
+scene.add(player);
+
+// The Sword
+const swordGeo = new THREE.BoxGeometry(0.2, 2.0, 0.2);
+const swordMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+const sword = new THREE.Mesh(swordGeo, swordMat);
+sword.position.set(1, 0, 0.5);
+sword.rotation.x = Math.PI / 2;
+player.add(sword);
+
+// --- GAME STATE ---
+let stats = { hp: 100, maxHp: 100, iron: 0, dmg: 10, lvl: 1, spd: 0.15 };
+let enemies = [];
 let keys = {};
 
-function init() {
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x87CEEB); // Sky
-    scene.fog = new THREE.Fog(0x87CEEB, 20, 100);
+// --- INPUTS ---
+window.addEventListener('keydown', (e) => { 
+    keys[e.code] = true; 
+    if(e.code === 'Space') attack();
+});
+window.addEventListener('keyup', (e) => keys[e.code] = false);
 
-    camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-    renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.shadowMap.enabled = true; // Shadows
-    document.body.appendChild(renderer.domElement);
+function attack() {
+    // Animation
+    sword.rotation.z = -Math.PI / 2;
+    setTimeout(() => sword.rotation.z = 0, 150);
 
-    // Dynamic Lighting
-    scene.add(new THREE.AmbientLight(0xffffff, 0.4));
-    const sun = new THREE.DirectionalLight(0xffffff, 1);
-    sun.position.set(10, 20, 10);
-    sun.castShadow = true;
-    scene.add(sun);
-
-    // --- GRASS FLOOR ---
-    const gTex = new THREE.TextureLoader().load('https://threejs.org/examples/textures/terrain/grasslight-big.jpg');
-    gTex.wrapS = gTex.wrapT = THREE.RepeatWrapping;
-    gTex.repeat.set(100, 100);
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(worldSize, worldSize), new THREE.MeshStandardMaterial({ map: gTex }));
-    floor.rotation.x = -Math.PI / 2;
-    floor.receiveShadow = true;
-    scene.add(floor);
-
-    // --- THE PLAYER (A Blue Sphere) ---
-    pObj = new THREE.Group();
-    pObj.position.y = 1;
-    scene.add(pObj);
-    
-    // Body (Sphere)
-    const pMat = new THREE.MeshStandardMaterial({ color: 0x3498db, emissive: 0x3498db, emissiveIntensity: 0.3 });
-    const pMesh = new THREE.Mesh(new THREE.SphereGeometry(0.7, 16, 16), pMat);
-    pMesh.castShadow = true;
-    pObj.add(pMesh);
-
-    // Sword (Attached to player)
-    const sMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, emissive: 0x00ffff, emissiveIntensity: 0.4 });
-    pObj.sword = new THREE.Mesh(new THREE.BoxGeometry(0.15, 1.8, 0.1), sMat);
-    pObj.sword.position.set(1.1, 0.2, 0.6);
-    pObj.sword.rotation.x = Math.PI / 2; // Pointing forward
-    pObj.add(pObj.sword);
-
-    camera.position.set(0, 12, 10); // Elevated camera
-    camera.lookAt(pObj.position);
-
-    // Inputs
-    window.onkeydown = e => { keys[e.code] = true; if(e.code === 'Space') swing(); };
-    window.onkeyup = e => keys[e.code] = false;
-
-    p1Body = pObj; // For logic
-    p1 = stats;    // For logic
-
-    spawnEnemy();
-    animate();
-}
-
-function spawnEnemy() {
-    const eGeo = new THREE.DodecahedronGeometry(1);
-    const eMat = new THREE.MeshStandardMaterial({ color: 0xe74c3c });
-    const enemy = new THREE.Mesh(eGeo, eMat);
-    enemy.castShadow = true;
-    const a = Math.random() * Math.PI * 2;
-    const d = 20 + Math.random() * 10;
-    enemy.position.set(pObj.position.x + Math.cos(a)*d, 1, pObj.position.z + Math.sin(a)*d);
-    enemy.hp = 15 + (stats.lvl * 5);
-    scene.add(enemy);
-    enemies.push(enemy);
-}
-
-function swing() {
-    if(!gameStarted || isPaused || p1.isB) return;
-    
-    // Visual Swing
-    pObj.sword.rotation.z = -Math.PI/2; 
-    setTimeout(() => pObj.sword.rotation.z = 0, 150);
-
-    // Collision
-    enemies.forEach((e, i) => {
-        if(pObj.position.distanceTo(e.position) < stats.reach) {
-            e.hp -= stats.dmg;
-            if(e.hp <= 0) {
-                stats.iron += 5;
-                stats.xp += 20;
-                scene.remove(e);
+    // Logic
+    enemies.forEach((en, i) => {
+        const dist = player.position.distanceTo(en.position);
+        if(dist < 5) {
+            en.hp -= stats.dmg;
+            if(en.hp <= 0) {
+                scene.remove(en);
                 enemies.splice(i, 1);
-                checkLvl();
+                stats.iron += 5;
                 updateUI();
-                spawnEnemy(); if(Math.random()>0.5) spawnEnemy();
+                spawnEnemy();
+                if(Math.random() > 0.7) spawnEnemy();
             }
         }
     });
 }
 
-function checkLvl() {
-    if(stats.xp >= stats.nextXp) {
-        stats.lvl++;
-        stats.xp = 0;
-        stats.nextXp *= 1.3;
-        // Visual growth
-        pObj.sword.scale.y += 0.1;
-        pObj.sword.material.emissiveIntensity += 0.1;
-    }
-}
-
 function buy(type) {
-    if(!gameStarted) return;
-    if(type === 'dmg' && stats.iron >= 10) { stats.dmg += 5; stats.iron -= 10; }
+    if(type === 'dmg' && stats.iron >= 10) { stats.dmg += 5; stats.iron -= 10; sword.scale.y += 0.2; }
     if(type === 'hp' && stats.iron >= 15) { stats.maxHp += 20; stats.hp = stats.maxHp; stats.iron -= 15; }
-    if(type === 'spd' && stats.iron >= 20) { stats.spd += 0.02; stats.iron -= 20; }
     updateUI();
 }
 
 function updateUI() {
-    document.getElementById('hp').innerText = Math.ceil(stats.hp);
-    document.getElementById('lvl').innerText = stats.lvl;
-    document.getElementById('iron').innerText = stats.iron;
-    document.getElementById('dmg').innerText = stats.dmg;
-    document.getElementById('spd').innerText = (stats.spd * 10).toFixed(1);
+    document.getElementById('hp-txt').innerText = Math.ceil(stats.hp);
+    document.getElementById('iron-txt').innerText = stats.iron;
 }
 
-// Reuse logic from prior version
-gameStarted = true; p2 = { isB: false };
+function spawnEnemy() {
+    const eGeo = new THREE.BoxGeometry(1, 1, 1);
+    const eMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+    const en = new THREE.Mesh(eGeo, eMat);
+    
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 20;
+    en.position.set(
+        player.position.x + Math.cos(angle) * dist,
+        0.5,
+        player.position.z + Math.sin(angle) * dist
+    );
+    en.hp = 10 + (stats.lvl * 2);
+    scene.add(en);
+    enemies.push(en);
+}
 
-Events = { on: (eng, event, cb) => cb() }; 
-engine = {};
+// Initial enemies
+for(let i=0; i<3; i++) spawnEnemy();
 
-Events.on(engine, 'beforeUpdate', () => {
-    if (!gameStarted || isPaused || stats.hp <= 0) return;
+// --- GAME LOOP ---
+function animate() {
+    requestAnimationFrame(animate);
 
-    // Movement (WASD)
-    let move = new THREE.Vector3(0,0,0);
-    if (keys['KeyW']) move.z -= 1;
-    if (keys['KeyS']) move.z += 1;
-    if (keys['KeyA']) move.x -= 1;
-    if (keys['KeyD']) move.x += 1;
-    if(move.length()>0) pObj.position.add(move.normalize().multiplyScalar(stats.spd));
+    // Movement
+    if (keys['KeyW']) player.position.z -= stats.spd;
+    if (keys['KeyS']) player.position.z += stats.spd;
+    if (keys['KeyA']) player.position.x -= stats.spd;
+    if (keys['KeyD']) player.position.x += stats.spd;
 
-    camera.position.set(pObj.position.x, pObj.position.y + 12, pObj.position.z + 10);
-    camera.lookAt(pObj.position);
+    // Camera + Light Follow Player
+    camera.position.set(player.position.x, player.position.y + 10, player.position.z + 12);
+    camera.lookAt(player.position);
+    pointLight.position.set(player.position.x, player.position.y + 5, player.position.z);
 
-    enemies.forEach(e => {
-        let dir = pObj.position.clone().sub(e.position).normalize();
-        e.position.add(dir.multiplyScalar(0.04 + (stats.lvl * 0.005)));
-        if(pObj.position.distanceTo(e.position) < 1.4) {
-            stats.hp -= 0.2;
+    // Enemy AI
+    enemies.forEach(en => {
+        const moveX = (player.position.x - en.position.x) * 0.01;
+        const moveZ = (player.position.z - en.position.z) * 0.01;
+        en.position.x += moveX;
+        en.position.z += moveZ;
+
+        if(player.position.distanceTo(en.position) < 1.5) {
+            stats.hp -= 0.1;
             updateUI();
             if(stats.hp <= 0) {
-                gameStarted = false;
-                document.getElementById('over-screen').style.display = 'block';
+                alert("Game Over! Iron Collected: " + stats.iron);
+                location.reload();
             }
         }
     });
-});
 
-function animate() { requestAnimationFrame(animate); renderer.render(scene, camera); }
-init();
+    renderer.render(scene, camera);
+}
+
+animate();
+
+// Handle Window Resize
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
 </script>
 </body>
 </html>
