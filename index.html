@@ -2,119 +2,148 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Blade Soul: Overdrive</title>
+    <title>Blade Soul: Boss Waves</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
-        body { margin: 0; background: #000; overflow: hidden; font-family: 'Verdana', sans-serif; }
+        body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
         #ui { position: absolute; top: 20px; left: 20px; color: white; pointer-events: none; z-index: 10; }
-        #shop { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); padding: 10px; border: 2px solid #00aaff; color: white; display: flex; gap: 10px; border-radius: 50px; }
-        .btn { padding: 10px 20px; cursor: pointer; background: #222; color: #00aaff; border: 1px solid #00aaff; border-radius: 20px; font-weight: bold; }
-        .btn:hover { background: #00aaff; color: white; }
-        #hp-bar { width: 200px; height: 10px; background: #333; border: 1px solid white; margin-top: 5px; }
-        #hp-fill { height: 100%; background: #ff4444; width: 100%; transition: width 0.2s; }
+        #shop { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.9); padding: 10px; border: 2px solid #2ecc71; color: white; display: flex; gap: 10px; border-radius: 10px; }
+        .btn { padding: 10px; cursor: pointer; background: #111; color: #2ecc71; border: 1px solid #2ecc71; font-weight: bold; font-size: 12px; }
+        #hp-bar { width: 200px; height: 12px; background: #222; border: 1px solid #fff; margin-top: 5px; position: relative; }
+        #hp-fill { height: 100%; background: #e74c3c; width: 100%; }
+        #wave-announcer { position: absolute; top: 40%; width: 100%; text-align: center; color: #2ecc71; font-size: 40px; font-weight: bold; pointer-events: none; display: none; text-shadow: 0 0 10px #2ecc71; }
     </style>
 </head>
 <body>
 
 <div id="ui">
-    <h1 style="margin:0; letter-spacing: 3px;">BLADE SOUL</h1>
+    <h2 id="wave-txt" style="margin:0">WAVE 1</h2>
     <div id="hp-bar"><div id="hp-fill"></div></div>
-    <div style="margin-top:10px;">IRON: <span id="iron-txt" style="color:#ffff44">0</span> | DMG: <span id="dmg-txt">10</span></div>
+    <div style="margin-top:5px;">IRON: <span id="iron-txt" style="color:#ffff44">0</span> | DMG: <span id="dmg-txt">10</span></div>
 </div>
 
+<div id="wave-announcer">WAVE START</div>
+
 <div id="shop">
-    <button class="btn" onclick="buy('dmg')">SHARPEN (10 Iron)</button>
-    <button class="btn" onclick="buy('hp')">HEAL (5 Iron)</button>
-    <button class="btn" onclick="buy('spd')">SPEED (15 Iron)</button>
+    <button class="btn" onclick="buy('dmg')">UPGRADE DMG (10 Iron)</button>
+    <button class="btn" onclick="buy('hp')">FULL HEAL (5 Iron)</button>
 </div>
 
 <script>
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0a0a12);
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+scene.background = new THREE.Color(0x050505);
+const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 1, 500);
+const renderer = new THREE.WebGLRenderer({ antialias: false, precision: "lowp" }); // Performance focus
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-// --- LIGHTING ---
-const light = new THREE.PointLight(0x00aaff, 2, 50);
-scene.add(light);
-scene.add(new THREE.AmbientLight(0xffffff, 0.3));
+// --- LIGHTING (Optimized) ---
+const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+scene.add(ambient);
+const pLight = new THREE.PointLight(0x2ecc71, 2, 30);
+scene.add(pLight);
 
 // --- GROUND ---
-const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(200, 200),
-    new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 })
-);
-floor.rotation.x = -Math.PI / 2;
-scene.add(floor);
-const grid = new THREE.GridHelper(200, 50, 0x00aaff, 0x222222);
+const grid = new THREE.GridHelper(400, 80, 0x2ecc71, 0x113311);
 scene.add(grid);
 
 // --- PLAYER ---
-const player = new THREE.Mesh(
-    new THREE.SphereGeometry(0.6, 16, 16),
-    new THREE.MeshStandardMaterial({ color: 0x00aaff, emissive: 0x00aaff, emissiveIntensity: 0.5 })
-);
+const player = new THREE.Mesh(new THREE.BoxGeometry(1, 1.2, 1), new THREE.MeshStandardMaterial({ color: 0x00aaff }));
 player.position.y = 0.6;
 scene.add(player);
 
-const sword = new THREE.Mesh(
-    new THREE.BoxGeometry(0.1, 2.5, 0.15),
-    new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff })
-);
-sword.position.set(1.2, 0, 0);
-sword.rotation.x = Math.PI / 2;
+const sword = new THREE.Mesh(new THREE.BoxGeometry(0.15, 2.5, 0.3), new THREE.MeshStandardMaterial({ color: 0xffffff }));
+sword.position.set(1.2, 0.5, 0);
 player.add(sword);
 
-// --- STATS ---
-let stats = { hp: 100, maxHp: 100, iron: 0, dmg: 10, spd: 0.18, knockback: 0.8 };
-let enemies = [], particles = [], keys = {};
+// --- GAME STATE ---
+let stats = { hp: 100, maxHp: 100, iron: 0, dmg: 10, wave: 1, enemiesLeft: 0, spd: 0.2 };
+let enemies = [], keys = {}, isWaveActive = false;
 
 window.onkeydown = (e) => { keys[e.code] = true; if(e.code === 'Space') attack(); };
 window.onkeyup = (e) => keys[e.code] = false;
 
+function announce(txt) {
+    const el = document.getElementById('wave-announcer');
+    el.innerText = txt; el.style.display = 'block';
+    setTimeout(() => { el.style.display = 'none'; }, 2000);
+}
+
+function spawnWave() {
+    isWaveActive = true;
+    document.getElementById('wave-txt').innerText = "WAVE " + stats.wave;
+    announce("WAVE " + stats.wave);
+    
+    let count = 3 + stats.wave;
+    let isBossWave = (stats.wave % 5 === 0);
+
+    if (isBossWave) {
+        spawnEnemy(true); // Spawn Cylinder Boss
+        count = Math.floor(count/2); // Fewer minions during boss
+    }
+    
+    for(let i=0; i < count; i++) spawnEnemy(false);
+    stats.enemiesLeft = enemies.length;
+}
+
+function spawnEnemy(isBoss) {
+    let geo, mat, hp, speed, scale;
+    
+    if (isBoss) {
+        geo = new THREE.CylinderGeometry(2, 2, 6, 12);
+        mat = new THREE.MeshStandardMaterial({ color: 0x2ecc71, emissive: 0x114411 });
+        hp = 100 + (stats.wave * 20);
+        speed = 0.04;
+        scale = 1;
+    } else {
+        geo = new THREE.BoxGeometry(1, 1, 1);
+        mat = new THREE.MeshStandardMaterial({ color: 0xff4444 });
+        hp = 15 + (stats.wave * 3);
+        speed = 0.07 + (Math.random() * 0.03);
+        scale = 1;
+    }
+
+    const en = new THREE.Mesh(geo, mat);
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 30 + Math.random() * 10;
+    en.position.set(player.position.x + Math.cos(angle)*dist, isBoss ? 3 : 0.5, player.position.z + Math.sin(angle)*dist);
+    
+    en.userData = { hp, speed, isBoss };
+    scene.add(en);
+    enemies.push(en);
+}
+
 function attack() {
-    // Swing Animation
-    sword.rotation.z = -Math.PI / 1.5;
-    setTimeout(() => sword.rotation.z = 0, 100);
+    sword.rotation.x = -Math.PI / 2;
+    setTimeout(() => sword.rotation.x = 0, 150);
 
     enemies.forEach((en, i) => {
         const dist = player.position.distanceTo(en.position);
-        if(dist < 4.5) {
-            en.hp -= stats.dmg;
-            // Knockback
-            const dir = en.position.clone().sub(player.position).normalize();
-            en.position.add(dir.multiplyScalar(stats.knockback));
+        const reach = en.userData.isBoss ? 7 : 5;
+        
+        if(dist < reach) {
+            en.userData.hp -= stats.dmg;
+            // Visual hit feedback
             en.material.emissive.setHex(0xffffff);
             setTimeout(() => en.material.emissive.setHex(0x000000), 50);
 
-            if(en.hp <= 0) {
-                spawnParticles(en.position);
+            if(en.userData.hp <= 0) {
+                stats.iron += en.userData.isBoss ? 50 : 5;
                 scene.remove(en);
                 enemies.splice(i, 1);
-                stats.iron += 5;
                 updateUI();
-                spawnEnemy(); spawnEnemy();
+                if(enemies.length === 0) {
+                    stats.wave++;
+                    setTimeout(spawnWave, 2000);
+                }
             }
         }
     });
 }
 
-function spawnParticles(pos) {
-    for(let i=0; i<5; i++) {
-        const p = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), new THREE.MeshBasicMaterial({color: 0xffff44}));
-        p.position.copy(pos);
-        p.userData = { vel: new THREE.Vector3((Math.random()-0.5)*0.2, Math.random()*0.2, (Math.random()-0.5)*0.2) };
-        particles.push(p);
-        scene.add(p);
-    }
-}
-
 function buy(type) {
     if(type === 'dmg' && stats.iron >= 10) { stats.dmg += 5; stats.iron -= 10; sword.scale.y += 0.1; }
-    if(type === 'hp' && stats.iron >= 5) { stats.hp = Math.min(stats.hp + 30, stats.maxHp); stats.iron -= 5; }
-    if(type === 'spd' && stats.iron >= 15) { stats.spd += 0.03; stats.iron -= 15; }
+    if(type === 'hp' && stats.iron >= 5) { stats.hp = stats.maxHp; stats.iron -= 5; }
     updateUI();
 }
 
@@ -124,20 +153,6 @@ function updateUI() {
     document.getElementById('hp-fill').style.width = (stats.hp / stats.maxHp * 100) + "%";
 }
 
-function spawnEnemy() {
-    const en = new THREE.Mesh(
-        new THREE.BoxGeometry(1.2, 1.2, 1.2),
-        new THREE.MeshStandardMaterial({ color: 0xff4444, emissive: 0x000000 })
-    );
-    const a = Math.random() * Math.PI * 2;
-    en.position.set(player.position.x + Math.cos(a)*25, 0.6, player.position.z + Math.sin(a)*25);
-    en.hp = 20;
-    scene.add(en);
-    enemies.push(en);
-}
-
-for(let i=0; i<5; i++) spawnEnemy();
-
 function animate() {
     requestAnimationFrame(animate);
 
@@ -146,28 +161,26 @@ function animate() {
     if (keys['KeyA']) player.position.x -= stats.spd;
     if (keys['KeyD']) player.position.x += stats.spd;
 
-    camera.position.lerp(new THREE.Vector3(player.position.x, player.position.y + 12, player.position.z + 12), 0.1);
+    camera.position.set(player.position.x, player.position.y + 15, player.position.z + 15);
     camera.lookAt(player.position);
-    light.position.copy(player.position).y += 2;
+    pLight.position.copy(player.position).y += 5;
 
     enemies.forEach(en => {
         const dir = player.position.clone().sub(en.position).normalize();
-        en.position.add(dir.multiplyScalar(0.06));
-        if(player.position.distanceTo(en.position) < 1.5) {
-            stats.hp -= 0.3;
+        en.position.add(dir.multiplyScalar(en.userData.speed));
+        if(!en.userData.isBoss) en.lookAt(player.position);
+
+        if(player.position.distanceTo(en.position) < (en.userData.isBoss ? 3 : 1.5)) {
+            stats.hp -= en.userData.isBoss ? 0.8 : 0.3;
             updateUI();
             if(stats.hp <= 0) location.reload();
         }
     });
 
-    particles.forEach((p, i) => {
-        p.position.add(p.userData.vel);
-        p.userData.vel.y -= 0.01;
-        if(p.position.y < 0) { scene.remove(p); particles.splice(i, 1); }
-    });
-
     renderer.render(scene, camera);
 }
+
+spawnWave();
 animate();
 </script>
 </body>
